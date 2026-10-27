@@ -2,6 +2,9 @@ from vidur.scheduler.global_scheduler.lor_global_scheduler import LORGlobalSched
 from vidur.scheduler.global_scheduler.online_lp_global_scheduler import (
     OnlineLPGlobalScheduler,
 )
+from vidur.scheduler.global_scheduler.power_of_two_global_scheduler import (
+    PowerOfTwoGlobalScheduler,
+)
 from vidur.scheduler.global_scheduler.random_global_scheduler import (
     RandomGlobalScheduler,
 )
@@ -25,4 +28,7 @@ GlobalSchedulerRegistry.register(
 GlobalSchedulerRegistry.register(GlobalSchedulerType.LOR, LORGlobalScheduler)
 GlobalSchedulerRegistry.register(
     GlobalSchedulerType.ONLINE_LP, OnlineLPGlobalScheduler
+)
+GlobalSchedulerRegistry.register(
+    GlobalSchedulerType.POWER_OF_TWO, PowerOfTwoGlobalScheduler
 )

@@ -6,3 +6,4 @@ class GlobalSchedulerType(BaseIntEnum):
     ROUND_ROBIN = 2
     LOR = 3
     ONLINE_LP = 4
+    POWER_OF_TWO = 5

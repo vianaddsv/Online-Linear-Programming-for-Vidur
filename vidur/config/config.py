@@ -507,6 +507,18 @@ class LORGlobalSchedulerConfig(BaseGlobalSchedulerConfig):
 
 
 @dataclass
+class PowerOfTwoGlobalSchedulerConfig(BaseGlobalSchedulerConfig):
+    seed: int = field(
+        default=42,
+        metadata={"help": "Seed for sampling the two candidate replicas."},
+    )
+
+    @staticmethod
+    def get_type():
+        return GlobalSchedulerType.POWER_OF_TWO
+
+
+@dataclass
 class OnlineLpGlobalSchedulerConfig(BaseGlobalSchedulerConfig):
     policy: str = field(
         default="dual_ahd",
