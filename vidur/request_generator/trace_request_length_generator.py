@@ -22,9 +22,7 @@ class TraceRequestLengthGenerator(BaseRequestLengthGenerator):
         prefill_col = config.prefill_column
         decode_col = config.decode_column
         missing_cols = [
-            col
-            for col in (prefill_col, decode_col)
-            if col not in self.trace_df.columns
+            col for col in (prefill_col, decode_col) if col not in self.trace_df.columns
         ]
         if missing_cols:
             raise ValueError(

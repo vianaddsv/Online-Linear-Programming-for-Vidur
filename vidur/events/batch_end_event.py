@@ -20,8 +20,8 @@ class BatchEndEvent(BaseEvent):
     def handle_event(
         self, scheduler: BaseGlobalScheduler, metrics_store: MetricsStore
     ) -> List[BaseEvent]:
-        from vidur.events.replica_schedule_event import ReplicaScheduleEvent
         from vidur.events.global_schedule_event import GlobalScheduleEvent
+        from vidur.events.replica_schedule_event import ReplicaScheduleEvent
 
         self._batch.on_batch_end(self.time)
         replica_scheduler = scheduler.get_replica_scheduler(self._replica_id)
@@ -33,7 +33,10 @@ class BatchEndEvent(BaseEvent):
         )
 
         next_events = [ReplicaScheduleEvent(self.time, self._replica_id)]
-        if hasattr(scheduler, "has_pending_requests") and scheduler.has_pending_requests():
+        if (
+            hasattr(scheduler, "has_pending_requests")
+            and scheduler.has_pending_requests()
+        ):
             next_events.append(GlobalScheduleEvent(self.time))
         return next_events
 

@@ -96,7 +96,9 @@ class OnlineLPSimulator:
         thetas = idxs - k0
         mem_vals = req.s + thetas + 1.0
         thru_ok = (self.thru_occ[:, idxs] + 1.0 <= self.B[:, None]).all(axis=1)
-        mem_ok = (self.mem_occ[:, idxs] + mem_vals[None, :] <= self.M[:, None]).all(axis=1)
+        mem_ok = (self.mem_occ[:, idxs] + mem_vals[None, :] <= self.M[:, None]).all(
+            axis=1
+        )
         feas_mask = thru_ok & mem_ok
         return True, idxs, mem_vals, feas_mask
 
@@ -217,7 +219,9 @@ class DualAHDPolicy:
             if batch_size == total_samples:
                 sample_idx = np.arange(total_samples, dtype=int)
             else:
-                sample_idx = self.rng.choice(total_samples, size=batch_size, replace=False)
+                sample_idx = self.rng.choice(
+                    total_samples, size=batch_size, replace=False
+                )
 
             grad = d_vec_flat.copy()
             for idx in sample_idx:
@@ -294,9 +298,15 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
         return self._waiting[: self._max_waiting]
 
     def _build_capacities(self) -> Tuple[np.ndarray, np.ndarray]:
-        batch_size_cap = int(self._config.cluster_config.replica_scheduler_config.batch_size_cap)
-        block_size = int(self._config.cluster_config.replica_scheduler_config.block_size)
-        num_blocks_override = self._config.cluster_config.replica_scheduler_config.num_blocks
+        batch_size_cap = int(
+            self._config.cluster_config.replica_scheduler_config.batch_size_cap
+        )
+        block_size = int(
+            self._config.cluster_config.replica_scheduler_config.block_size
+        )
+        num_blocks_override = (
+            self._config.cluster_config.replica_scheduler_config.num_blocks
+        )
         max_tokens = getattr(self._config.request_generator_config, "max_tokens", None)
         if not max_tokens:
             max_tokens = 1
@@ -304,7 +314,9 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
         B = []
         M = []
         for replica in self._replicas.values():
-            memory_planner = MemoryPlanner(self._config.cluster_config.replica_config, replica)
+            memory_planner = MemoryPlanner(
+                self._config.cluster_config.replica_config, replica
+            )
             max_batch_size = min(memory_planner.get_max_batch_size(), batch_size_cap)
             B.append(max_batch_size)
 
@@ -312,7 +324,9 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
                 num_blocks = int(num_blocks_override)
             else:
                 max_blocks_per_sequence = max(1, max_tokens // block_size)
-                num_blocks = max_blocks_per_sequence * memory_planner.get_max_request_slots()
+                num_blocks = (
+                    max_blocks_per_sequence * memory_planner.get_max_request_slots()
+                )
             M.append(num_blocks * block_size)
 
         return np.array(B, dtype=float), np.array(M, dtype=float)
@@ -495,7 +509,9 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
     def _estimate_total_jobs(self) -> int:
         if self._lp_config.total_jobs > 0:
             return int(self._estimate_job_bound(self._lp_config.total_jobs))
-        num_requests = getattr(self._config.request_generator_config, "num_requests", None)
+        num_requests = getattr(
+            self._config.request_generator_config, "num_requests", None
+        )
         if num_requests:
             return int(self._estimate_job_bound(num_requests))
         return max(1, self._jobs_seen + len(self._waiting))
@@ -566,7 +582,9 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
             for g in range(self._sim.G):
                 if not feas_mask[g]:
                     continue
-                margins[g] = r_norm - self._policy.column_inner(g, idxs, mem_vals) - len_penalty
+                margins[g] = (
+                    r_norm - self._policy.column_inner(g, idxs, mem_vals) - len_penalty
+                )
                 if margins[g] > eff_eps:
                     candidates.append(
                         (margins[g], req, g, step, r_decision, r_report, idxs, mem_vals)

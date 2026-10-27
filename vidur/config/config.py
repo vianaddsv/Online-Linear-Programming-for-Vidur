@@ -155,9 +155,7 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     )
     decode_column: str = field(
         default="num_decode_tokens",
-        metadata={
-            "help": "Decode column name for the trace request length generator."
-        },
+        metadata={"help": "Decode column name for the trace request length generator."},
     )
     shuffle: bool = field(
         default=True,
@@ -592,7 +590,9 @@ class OnlineLpGlobalSchedulerConfig(BaseGlobalSchedulerConfig):
     )
     goodput_weight: float = field(
         default=0.0,
-        metadata={"help": "Goodput bonus weight: tail TTFT weight zeta_2 in the paper."},
+        metadata={
+            "help": "Goodput bonus weight: tail TTFT weight zeta_2 in the paper."
+        },
     )
     tail_eel_window: int = field(
         default=0,
@@ -628,7 +628,9 @@ class OnlineLpGlobalSchedulerConfig(BaseGlobalSchedulerConfig):
     )
     rate_shift_min_arrivals: int = field(
         default=20,
-        metadata={"help": "Minimum arrivals in the window before testing for a rate increase."},
+        metadata={
+            "help": "Minimum arrivals in the window before testing for a rate increase."
+        },
     )
     export_decisions: bool = field(
         default=False,

@@ -26,9 +26,7 @@ GlobalSchedulerRegistry.register(
     GlobalSchedulerType.ROUND_ROBIN, RoundRobinGlobalScheduler
 )
 GlobalSchedulerRegistry.register(GlobalSchedulerType.LOR, LORGlobalScheduler)
-GlobalSchedulerRegistry.register(
-    GlobalSchedulerType.ONLINE_LP, OnlineLPGlobalScheduler
-)
+GlobalSchedulerRegistry.register(GlobalSchedulerType.ONLINE_LP, OnlineLPGlobalScheduler)
 GlobalSchedulerRegistry.register(
     GlobalSchedulerType.POWER_OF_TWO, PowerOfTwoGlobalScheduler
 )
