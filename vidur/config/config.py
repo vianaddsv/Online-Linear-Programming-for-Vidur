@@ -586,11 +586,55 @@ class OnlineLpGlobalSchedulerConfig(BaseGlobalSchedulerConfig):
     )
     goodput_window: int = field(
         default=0,
-        metadata={"help": "Goodput window (steps) for bonus reward."},
+        metadata={
+            "help": "Goodput window (steps) for bonus reward: tail TTFT bound t'_2 in the paper."
+        },
     )
     goodput_weight: float = field(
         default=0.0,
-        metadata={"help": "Goodput bonus weight."},
+        metadata={"help": "Goodput bonus weight: tail TTFT weight zeta_2 in the paper."},
+    )
+    tail_eel_window: int = field(
+        default=0,
+        metadata={
+            "help": "Tail end-to-end latency bound t'_1 (steps) for the indicator reward."
+        },
+    )
+    tail_eel_weight: float = field(
+        default=0.0,
+        metadata={"help": "Tail end-to-end latency weight: zeta_1 in the paper."},
+    )
+    decode_prediction_noise: float = field(
+        default=0.0,
+        metadata={
+            "help": "Relative error e of the predicted decode length, o_hat ~ Unif((1-e)o, (1+e)o). 0 uses the true length."
+        },
+    )
+    decode_prediction_seed: int = field(
+        default=0,
+        metadata={"help": "Seed for the decode-length prediction noise."},
+    )
+    rate_window_seconds: float = field(
+        default=0.0,
+        metadata={
+            "help": "Sliding window (seconds) for arrival-rate increase detection. 0 disables it."
+        },
+    )
+    rate_shift_z: float = field(
+        default=3.0,
+        metadata={
+            "help": "z-score of the window arrival count above which a rate increase is declared."
+        },
+    )
+    rate_shift_min_arrivals: int = field(
+        default=20,
+        metadata={"help": "Minimum arrivals in the window before testing for a rate increase."},
+    )
+    export_decisions: bool = field(
+        default=False,
+        metadata={
+            "help": "Write the LP instance and the routing decisions to the output directory."
+        },
     )
     grad_steps: int = field(
         default=5,

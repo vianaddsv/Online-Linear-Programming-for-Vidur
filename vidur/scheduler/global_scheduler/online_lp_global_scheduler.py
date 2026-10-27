@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import bisect
+import csv
+import json
 import math
-from dataclasses import dataclass
+import os
+from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
@@ -19,6 +23,7 @@ class LPRequest:
     t_arr: int
     s: int
     o: int
+    o_true: int
 
 
 def reward_components(
@@ -32,13 +37,23 @@ def reward_components(
     t_arr: int,
     goodput_window: int,
     goodput_weight: float,
+    tail_eel_window: int = 0,
+    tail_eel_weight: float = 0.0,
 ) -> Tuple[float, float, float, float, float, float]:
     thr = max(0, min(o, T - tau + 1))
     comp_saved = max(0, T - (tau + o - 1))
     ft_saved = max(0, T - tau + 1)
     job_const = (beta + gamma) * (T - t_arr + 1)
     goodput_bonus = goodput_weight if (tau - t_arr) < goodput_window else 0.0
-    r_report = sigma + alpha * thr + beta * comp_saved + gamma * ft_saved + goodput_bonus
+    tail_eel_bonus = tail_eel_weight if (tau + o - t_arr) < tail_eel_window else 0.0
+    r_report = (
+        sigma
+        + alpha * thr
+        + beta * comp_saved
+        + gamma * ft_saved
+        + goodput_bonus
+        + tail_eel_bonus
+    )
     r_decision = r_report
     return thr, comp_saved, ft_saved, job_const, r_decision, r_report
 
@@ -259,6 +274,14 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
         )
         self._max_waiting = max(0, int(self._lp_config.max_waiting))
 
+        self._export_rows: Optional[Dict[int, dict]] = (
+            {} if self._lp_config.export_decisions else None
+        )
+        self._rate_window = max(0.0, float(self._lp_config.rate_window_seconds))
+        self._rate_ref_start: Optional[float] = None
+        self._arrival_times: List[float] = []
+        self._rate_shift_events: List[dict] = []
+
     def set_time(self, time_seconds: float) -> None:
         self._current_time_seconds = max(self._current_time_seconds, time_seconds)
 
@@ -297,6 +320,17 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
     def _to_step(self, time_seconds: float) -> int:
         return max(1, int(math.floor(time_seconds / self._time_step_seconds)) + 1)
 
+    def _predict_decode_tokens(self, request: Request) -> int:
+        noise = float(self._lp_config.decode_prediction_noise)
+        o_true = int(request.num_decode_tokens)
+        if noise <= 0.0:
+            return o_true
+        rng = np.random.default_rng(
+            [int(self._lp_config.decode_prediction_seed), int(request.id)]
+        )
+        o_hat = rng.uniform((1.0 - noise) * o_true, (1.0 + noise) * o_true)
+        return max(1, int(round(o_hat)))
+
     def _make_lp_request(self, request: Request) -> LPRequest:
         step = self._to_step(request.arrived_at)
         if step > self._horizon:
@@ -306,8 +340,157 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
             j=request.id,
             t_arr=step,
             s=request.num_prefill_tokens,
-            o=request.num_decode_tokens,
+            o=self._predict_decode_tokens(request),
+            o_true=request.num_decode_tokens,
         )
+
+    def _observe_arrivals(self, arrivals: List[LPRequest]) -> None:
+        if self._rate_window <= 0.0:
+            return
+        for req in arrivals:
+            arrived_at = float(req.request.arrived_at)
+            if self._rate_ref_start is None:
+                self._rate_ref_start = arrived_at
+            self._arrival_times.append(arrived_at)
+
+    def _detect_rate_shift(self, now: float) -> None:
+        # Poisson z-test: arrivals in [now - W, now] against the rate observed since the last reset.
+        if self._rate_window <= 0.0 or self._rate_ref_start is None:
+            return
+        window_start = now - self._rate_window
+        ref_duration = window_start - self._rate_ref_start
+        if ref_duration < self._rate_window:
+            return
+
+        idx_window = bisect.bisect_left(self._arrival_times, window_start)
+        n_ref = idx_window
+        n_window = bisect.bisect_right(self._arrival_times, now) - idx_window
+        if n_ref == 0 or n_window < self._lp_config.rate_shift_min_arrivals:
+            return
+
+        mu = n_ref / ref_duration * self._rate_window
+        z = (n_window - mu) / math.sqrt(mu)
+        if z <= self._lp_config.rate_shift_z:
+            return
+
+        window_start_step = self._to_step(window_start)
+        num_samples_before = len(self._policy.history)
+        self._policy.history = [
+            col for col in self._policy.history if col.tau >= window_start_step
+        ]
+        self._arrival_times = self._arrival_times[idx_window:]
+        self._rate_ref_start = window_start
+        self._rate_shift_events.append(
+            {
+                "time": now,
+                "window_start": window_start,
+                "arrivals_in_window": n_window,
+                "expected_arrivals": mu,
+                "z": z,
+                "history_samples_dropped": num_samples_before
+                - len(self._policy.history),
+            }
+        )
+
+    def _record_arrival(self, req: LPRequest) -> None:
+        if self._export_rows is None:
+            return
+        self._export_rows[req.j] = {
+            "request_id": req.j,
+            "arrived_at": float(req.request.arrived_at),
+            "t_arr": req.t_arr,
+            "s": req.s,
+            "o_true": req.o_true,
+            "o_pred": req.o,
+            "started": 0,
+            "replica_id": "",
+            "start_step": "",
+            "dispatched_at": "",
+            "reward": "",
+            "margin": "",
+        }
+
+    def _record_start(
+        self, req: LPRequest, g: int, tau: int, margin: float, reward: float
+    ) -> None:
+        if self._export_rows is None or req.j not in self._export_rows:
+            return
+        self._export_rows[req.j].update(
+            {
+                "started": 1,
+                "replica_id": g,
+                "start_step": tau,
+                "dispatched_at": self._current_time_seconds,
+                "reward": reward,
+                "margin": margin,
+            }
+        )
+
+    def on_simulation_end(self) -> None:
+        if self._export_rows is None:
+            return
+
+        output_dir = self._config.metrics_config.output_dir
+        rows = [self._export_rows[j] for j in sorted(self._export_rows)]
+        fieldnames = [
+            "request_id",
+            "arrived_at",
+            "t_arr",
+            "s",
+            "o_true",
+            "o_pred",
+            "started",
+            "replica_id",
+            "start_step",
+            "dispatched_at",
+            "reward",
+            "margin",
+        ]
+        with open(
+            os.path.join(output_dir, "online_lp_requests.csv"), "w", newline=""
+        ) as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        started_rows = [row for row in rows if row["started"]]
+        lp = self._lp_config
+        instance = {
+            "horizon": self._horizon,
+            "time_step_seconds": self._time_step_seconds,
+            "replica_ids": [int(replica_id) for replica_id in self._replicas.keys()],
+            "batch_capacity": self._sim.B.tolist(),
+            "kv_capacity_tokens": self._sim.M.tolist(),
+            "memory_kernel": "s + theta + 1 for 0 <= theta < o_pred",
+            "reward": {
+                "alpha": lp.alpha,
+                "beta": lp.beta,
+                "gamma": lp.gamma,
+                "sigma": lp.sigma,
+                "zeta1": lp.tail_eel_weight,
+                "t1": lp.tail_eel_window,
+                "zeta2": lp.goodput_weight,
+                "t2": lp.goodput_window,
+                "formula": (
+                    "sigma + alpha*min(o, T-tau+1) + beta*max(0, T-(tau+o-1))"
+                    " + gamma*max(0, T-tau+1) + zeta2*1[tau-t_arr < t2]"
+                    " + zeta1*1[tau+o-t_arr < t1], with o = o_pred"
+                ),
+            },
+            "online_lp_config": asdict(lp),
+            "mem_scale": self._policy.mem_scale,
+            "rate_shift_events": self._rate_shift_events,
+            "summary": {
+                "num_requests": len(rows),
+                "num_started": len(started_rows),
+                "num_waiting_at_end": len(self._waiting),
+                "online_objective": float(
+                    sum(float(row["reward"]) for row in started_rows)
+                ),
+            },
+        }
+        with open(os.path.join(output_dir, "online_lp_instance.json"), "w") as f:
+            json.dump(instance, f, indent=2)
 
     def _estimate_total_jobs(self) -> int:
         if self._lp_config.total_jobs > 0:
@@ -373,6 +556,8 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
                 req.t_arr,
                 self._lp_config.goodput_window,
                 self._lp_config.goodput_weight,
+                self._lp_config.tail_eel_window,
+                self._lp_config.tail_eel_weight,
             )
             r_norm = min(r_decision / self._policy.reward_normalizer, 1.0)
 
@@ -402,12 +587,12 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
         started_ids: Set[int] = set()
         mappings: List[Tuple[int, Request]] = []
         for (
-            _,
+            margin_cand,
             req_cand,
             g_cand,
             tau_cand,
             _,
-            _,
+            r_report_cand,
             idxs_cand,
             mem_vals_cand,
         ) in candidates:
@@ -418,6 +603,9 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
             self._sim.start_job(req_cand, g_cand, tau_cand, idxs_cand, mem_vals_cand)
             mappings.append((g_cand, req_cand.request))
             started_ids.add(req_cand.j)
+            self._record_start(
+                req_cand, g_cand, tau_cand, float(margin_cand), float(r_report_cand)
+            )
 
         if started_ids:
             self._waiting = [req for req in self._waiting if req.j not in started_ids]
@@ -439,9 +627,15 @@ class OnlineLPGlobalScheduler(BaseGlobalScheduler):
         self._request_queue = []
 
         arrivals_by_step: Dict[int, List[LPRequest]] = {}
+        new_lp_requests: List[LPRequest] = []
         for request in new_requests:
             lp_req = self._make_lp_request(request)
             arrivals_by_step.setdefault(lp_req.t_arr, []).append(lp_req)
+            new_lp_requests.append(lp_req)
+            self._record_arrival(lp_req)
+
+        self._observe_arrivals(new_lp_requests)
+        self._detect_rate_shift(self._current_time_seconds)
 
         max_step = max([self._current_step] + list(arrivals_by_step.keys()))
 

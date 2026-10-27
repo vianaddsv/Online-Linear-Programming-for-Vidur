@@ -85,6 +85,9 @@ class Simulator:
         self._metric_store.plot(self._time)
         logger.info("Metrics written")
 
+        if hasattr(self._scheduler, "on_simulation_end"):
+            self._scheduler.on_simulation_end()
+
         if self._config.metrics_config.write_json_trace:
             self._write_event_trace()
             logger.info("Json event trace written")
