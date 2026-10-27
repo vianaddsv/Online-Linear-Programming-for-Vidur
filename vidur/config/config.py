@@ -422,6 +422,12 @@ class MetricsConfig:
         default=True,
         metadata={"help": "Whether to store request metrics."},
     )
+    store_request_timeline: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to store a per-request timeline (dispatch, first token, completion, generated tokens)."
+        },
+    )
     store_batch_metrics: bool = field(
         default=True,
         metadata={"help": "Whether to store batch metrics."},

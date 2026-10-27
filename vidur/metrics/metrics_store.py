@@ -1,6 +1,6 @@
 import os
 from functools import reduce
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 import plotly_express as px
@@ -97,6 +97,8 @@ class MetricsStore:
             )
         self._requests_by_id: Dict[int, Request] = {}
         self._completed_request_ids: Set[int] = set()
+        self._request_original_lengths: Dict[int, Tuple[int, int]] = {}
+        self._request_dispatches: Dict[int, Tuple[float, int]] = {}
 
         # Initialise batch metrics
         self._batch_metrics_count_distribution: Dict[
@@ -488,6 +490,7 @@ class MetricsStore:
         if final_time is not None:
             self._finalize_request_metrics(final_time)
         self._store_request_metrics(dir_plot_path)
+        self._store_request_timeline(final_time)
         self._store_batch_metrics(dir_plot_path)
         self._store_completion_metrics(dir_plot_path)
         self._store_operation_metrics(dir_plot_path)
@@ -499,6 +502,11 @@ class MetricsStore:
             return
 
         self._requests_by_id[request.id] = request
+        if self._config.store_request_timeline:
+            self._request_original_lengths[request.id] = (
+                request.num_prefill_tokens,
+                request.num_decode_tokens,
+            )
         self._request_completion_metrics_time_series[
             RequestCompletionMetricsTimeSeries.REQUEST_ARRIVAL
         ].put(time, 1)
@@ -592,6 +600,63 @@ class MetricsStore:
             request.id, 1
         )
         self._completed_request_ids.add(request.id)
+
+    @if_write_metrics
+    def on_request_dispatch(
+        self, time: float, replica_id: int, request: Request
+    ) -> None:
+        if not self._config.store_request_timeline:
+            return
+        if request.id not in self._request_dispatches:
+            self._request_dispatches[request.id] = (time, replica_id)
+
+    def _store_request_timeline(self, final_time: Optional[float]) -> None:
+        if not (
+            self._config.store_request_timeline and self._config.store_request_metrics
+        ):
+            return
+
+        rows = []
+        for request_id, request in self._requests_by_id.items():
+            prefill_tokens, decode_tokens = self._request_original_lengths.get(
+                request_id, (request.num_prefill_tokens, request.num_decode_tokens)
+            )
+            dispatched_at, replica_id = self._request_dispatches.get(
+                request_id, (None, None)
+            )
+            # after a restart the original sequence is reprocessed from position 0
+            decode_tokens_generated = min(
+                decode_tokens, max(0, request.num_processed_tokens - prefill_tokens)
+            )
+            rows.append(
+                {
+                    "request_id": request_id,
+                    "arrived_at": request.arrived_at,
+                    "dispatched_at": dispatched_at,
+                    "replica_id": replica_id,
+                    "scheduled_at": (
+                        request._scheduled_at if request._scheduled_at > 0 else None
+                    ),
+                    "first_token_at": (
+                        request._prefill_completed_at
+                        if request._prefill_completed_at > 0
+                        else None
+                    ),
+                    "completed_at": (
+                        request._completed_at if request.completed else None
+                    ),
+                    "completed": int(request.completed),
+                    "num_prefill_tokens": prefill_tokens,
+                    "num_decode_tokens": decode_tokens,
+                    "decode_tokens_generated": decode_tokens_generated,
+                    "num_restarts": request.num_restarts,
+                    "final_time": final_time,
+                }
+            )
+
+        pd.DataFrame(rows).to_csv(
+            f"{self._config.output_dir}/request_timeline.csv", index=False
+        )
 
     def _finalize_request_metrics(self, final_time: float) -> None:
         if not self._config.store_request_metrics:

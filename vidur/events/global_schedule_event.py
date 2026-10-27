@@ -30,6 +30,7 @@ class GlobalScheduleEvent(BaseEvent):
         for replica_id, request in self._request_mapping:
             self._replica_set.add(replica_id)
             scheduler.get_replica_scheduler(replica_id).add_request(request)
+            metrics_store.on_request_dispatch(self.time, replica_id, request)
 
         return [
             ReplicaScheduleEvent(self.time, replica_id)
