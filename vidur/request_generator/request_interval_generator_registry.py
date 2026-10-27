@@ -1,6 +1,9 @@
 from vidur.request_generator.gamma_request_interval_generator import (
     GammaRequestIntervalGenerator,
 )
+from vidur.request_generator.poisson_rate_shift_request_interval_generator import (
+    PoissonRateShiftRequestIntervalGenerator,
+)
 from vidur.request_generator.poisson_request_interval_generator import (
     PoissonRequestIntervalGenerator,
 )
@@ -29,4 +32,8 @@ RequestIntervalGeneratorRegistry.register(
 )
 RequestIntervalGeneratorRegistry.register(
     RequestIntervalGeneratorType.TRACE, TraceRequestIntervalGenerator
+)
+RequestIntervalGeneratorRegistry.register(
+    RequestIntervalGeneratorType.POISSON_RATE_SHIFT,
+    PoissonRateShiftRequestIntervalGenerator,
 )

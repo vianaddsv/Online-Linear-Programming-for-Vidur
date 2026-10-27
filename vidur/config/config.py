@@ -83,6 +83,28 @@ class PoissonRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
 
 
 @dataclass
+class PoissonRateShiftRequestIntervalGeneratorConfig(
+    BaseRequestIntervalGeneratorConfig
+):
+    qps: float = field(
+        default=0.5,
+        metadata={"help": "Queries per second before the rate shift."},
+    )
+    qps_after_shift: float = field(
+        default=1.0,
+        metadata={"help": "Queries per second after the rate shift."},
+    )
+    shift_time: float = field(
+        default=60.0,
+        metadata={"help": "Time (seconds) at which the arrival rate switches."},
+    )
+
+    @staticmethod
+    def get_type():
+        return RequestIntervalGeneratorType.POISSON_RATE_SHIFT
+
+
+@dataclass
 class GammaRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     qps: float = field(
         default=0.2,
