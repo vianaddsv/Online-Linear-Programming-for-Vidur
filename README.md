@@ -1,3 +1,12 @@
+> **About this fork.** This repository is a fork of [qqwetidx/Online-Linear-Programming-for-Vidur](https://github.com/qqwetidx/Online-Linear-Programming-for-Vidur), the code released with *Online Linear Programming for Multi-Objective Routing in LLM Serving* (Zixi Chen, Yinyu Ye and Zijie Zhou, ICML 2026, [arXiv:2607.03948](https://arxiv.org/abs/2607.03948)). That code builds on Microsoft's [Vidur](https://github.com/microsoft/vidur) simulator, described below. This fork adds what is needed to reproduce the paper's experiments:
+>
+> - a Power-of-2 Choices baseline and Poisson arrivals with a rate shift;
+> - Online LP options for noisy decode-length prediction, the tail end-to-end latency reward (zeta_1), sliding-window rate detection, and export of the instance and decisions for offline solvers;
+> - an optional per-request timeline in the metrics;
+> - scripts that build the LMSYS-Chat-1M lengths and run the settings of the paper's figures and tables.
+>
+> All additions are off by default, and simulator outputs with the defaults are identical to the original code. [docs/reproduction.md](docs/reproduction.md) describes the steps and the assumptions made where the paper does not state its settings.
+
 # Vidur: LLM Inference System Simulator
 
 Vidur is a high-fidelity and extensible LLM inference system simulator. It can help you with:
